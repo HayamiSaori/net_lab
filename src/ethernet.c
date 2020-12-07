@@ -57,14 +57,18 @@ void ethernet_out(buf_t *buf, const uint8_t *mac, net_protocol_t protocol)
     case NET_PROTOCOL_TCP:
     case NET_PROTOCOL_UDP:
     case NET_PROTOCOL_IP:
+        printf("\n---IP---\n");
         eth_head[12] = 0x08;
         eth_head[13] = 0x00;
         break;
     case NET_PROTOCOL_ARP:
+        printf("\n---ARP---\n");
         eth_head[12] = 0x08;
         eth_head[13] = 0x06;
         break;
     default:
+        eth_head[12] = protocol >> 8 & 0xff;
+        eth_head[13] = protocol & 0xff;
         break;
     }
     driver_send(buf);
