@@ -17,7 +17,18 @@
 void ethernet_in(buf_t *buf)
 {
     // TODO
-    
+    uint8_t *eth_head = buf -> data;
+    uint16_t protocol = ((eth_head + 12)[0] << 8) + (eth_head + 12)[1];
+    if(protocol == NET_PROTOCOL_IP)
+    {
+        buf_remove_header(buf,14);
+        ip_in(buf);
+    }
+    else if(protocol == NET_PROTOCOL_ARP)
+    {
+        buf_remove_header(buf,14);
+        arp_in(buf);
+    }
 }
 
 /**
@@ -32,7 +43,31 @@ void ethernet_in(buf_t *buf)
 void ethernet_out(buf_t *buf, const uint8_t *mac, net_protocol_t protocol)
 {
     // TODO
-
+    buf_add_header(buf,14);
+    uint8_t *eth_head = buf -> data;
+    uint8_t i;
+    for(i=0;i<6;i++)
+    {
+        eth_head[i] = mac[i];
+        eth_head[i + 6] = net_if_mac[i];
+    }
+    switch (protocol)
+    {
+    case NET_PROTOCOL_ICMP:
+    case NET_PROTOCOL_TCP:
+    case NET_PROTOCOL_UDP:
+    case NET_PROTOCOL_IP:
+        eth_head[12] = 0x08;
+        eth_head[13] = 0x00;
+        break;
+    case NET_PROTOCOL_ARP:
+        eth_head[12] = 0x08;
+        eth_head[13] = 0x06;
+        break;
+    default:
+        break;
+    }
+    driver_send(buf);
 }
 
 /**
