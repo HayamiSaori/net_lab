@@ -19,16 +19,11 @@ void ethernet_in(buf_t *buf)
     // TODO
     uint8_t *eth_head = buf -> data;
     uint16_t protocol = ((eth_head + 12)[0] << 8) + (eth_head + 12)[1];
+    buf_remove_header(buf,14);
     if(protocol == NET_PROTOCOL_IP)
-    {
-        buf_remove_header(buf,14);
         ip_in(buf);
-    }
     else if(protocol == NET_PROTOCOL_ARP)
-    {
-        buf_remove_header(buf,14);
         arp_in(buf);
-    }
 }
 
 /**
@@ -57,12 +52,12 @@ void ethernet_out(buf_t *buf, const uint8_t *mac, net_protocol_t protocol)
     case NET_PROTOCOL_TCP:
     case NET_PROTOCOL_UDP:
     case NET_PROTOCOL_IP:
-        printf("\n---IP---\n");
+        // printf("\n---IP---\n");
         eth_head[12] = 0x08;
         eth_head[13] = 0x00;
         break;
     case NET_PROTOCOL_ARP:
-        printf("\n---ARP---\n");
+        // printf("\n---ARP---\n");
         eth_head[12] = 0x08;
         eth_head[13] = 0x06;
         break;
