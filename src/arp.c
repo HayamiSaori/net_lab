@@ -45,7 +45,54 @@ arp_buf_t arp_buf;
 void arp_update(uint8_t *ip, uint8_t *mac, arp_state_t state)
 {
     // TODO
-
+    uint8_t i,j;
+    time_t cur_time;
+    time_t max_time = 0;
+    time(&cur_time);
+    for(i=0;i<ARP_MAX_ENTRY;i++)
+    {
+        if(cur_time - arp_table[i].timeout > 30)
+        {
+            arp_table[i].state = ARP_INVALID;
+        }
+    }
+    for(i=0;i<ARP_MAX_ENTRY;i++)
+    {
+        if(arp_table[i].state == ARP_INVALID)
+        {
+            arp_table[i].timeout = cur_time;
+            for(j=0;j<4;j++)
+            {
+                arp_table[i].ip[j] = ip[j];
+            }
+            for(j=0;j<6;j++)
+            {
+                arp_table[i].mac[j] = mac[j];
+            }
+            arp_table[i].state = ARP_VALID;
+            return;
+        }
+    }
+    for(i=0;i<ARP_MAX_ENTRY;i++)
+    {
+        if(arp_table[i].timeout > max_time)
+        {
+            max_time = arp_table[i].timeout;
+            j = i;
+        }
+    }
+    i = j;
+    arp_table[i].timeout = cur_time;
+    for(j=0;j<4;j++)
+    {
+        arp_table[i].ip[j] = ip[j];
+    }
+    for(j=0;j<6;j++)
+    {
+        arp_table[i].mac[j] = mac[j];
+    }
+    arp_table[i].state = ARP_VALID;
+    return;
 }
 
 /**
@@ -73,7 +120,40 @@ static uint8_t *arp_lookup(uint8_t *ip)
 static void arp_req(uint8_t *target_ip)
 {
     // TODO
-
+    buf_init(&txbuf,28);
+    char net_if_mac[6] = DRIVER_IF_MAC;
+    char net_if_ip[4] = DRIVER_IF_IP;
+    char target_mac[8] = {0xff,0xff,0xff,0xff,0xff,0xff};
+    char *arp_head;
+    char *p;
+    arp_head = txbuf.data;
+    // hardware type:1
+    arp_head[0] = 0x00;
+    arp_head[1] = 0x01;
+    // protocol type:0x0800
+    arp_head[2] = 0x08;
+    arp_head[3] = 0x00;
+    // MAC lenth:6 Bytes
+    arp_head[4] = 0x06;
+    // IP lenth:4 Bytes
+    arp_head[5] = 0x04;
+    // OP code:0x0001;
+    arp_head[6] = 0x00;
+    arp_head[7] = 0x01;
+    // Src MAC and Dst MAC
+    uint8_t i;
+    for(i=0;i<6;i++)
+    {
+        arp_head[8 + i] = net_if_mac[i];
+        arp_head[18 + i] = 0x00;
+    }
+    // Src IP and Dst IP
+    for(i=0;i<4;i++)
+    {
+        arp_head[14 + i] = net_if_ip[i];
+        arp_head[24 + i] = target_ip[i];
+    }
+    ethernet_out(&txbuf,target_mac,NET_PROTOCOL_ARP);
 }
 
 /**
@@ -96,7 +176,81 @@ static void arp_req(uint8_t *target_ip)
 void arp_in(buf_t *buf)
 {
     // TODO
-    
+    char *arp_head;
+    char *src_ip;
+    char *src_mac;
+    char *dst_mac;
+    char *p;
+    buf_t *ans_buf;
+    uint8_t i;
+    uint16_t hardware_type,protocol,mac_len,ip_len,op_type;
+    arp_head = buf -> data;
+    src_mac = arp_head + 8;
+    src_ip = arp_head + 14;
+
+    hardware_type = (arp_head[0] << 8) + arp_head[1];
+    protocol = (arp_head[2] << 8) + arp_head[3];
+    mac_len = arp_head[4];
+    ip_len = arp_head[5];
+    op_type = (arp_head[6] << 8) + arp_head[7];
+    // inspection
+    // if(
+    //     hardware_type == 0x0001 &&
+    //     protocol == NET_PROTOCOL_IP && 
+    //     mac_len == 0x06 && 
+    //     ip_len == 0x04
+    // ){
+        arp_update(src_ip,src_mac,ARP_VALID);
+        if(arp_buf.valid == ARP_VALID)
+        {
+            dst_mac = arp_lookup(src_ip);
+            if(dst_mac != NULL)
+            {
+                /*p = arp_head + 18;
+                printf("\nDst MAC address: %.2x:%02x:%02x:%02x:%02x:%02x\n",
+                p[0],p[1],p[2],p[3],p[4],p[5]);*/
+                arp_buf.valid = 0;
+                ethernet_out(&(arp_buf.buf),dst_mac,arp_buf.protocol);
+            }
+            return;
+        }
+        else
+        {
+            if(op_type == ARP_REQUEST)
+            {
+                buf_init(&txbuf,28);
+                p = txbuf.data;
+                // hardware type:1
+                p[0] = 0x00;
+                p[1] = 0x01;
+                // protocol type:0x0800
+                p[2] = 0x08;
+                p[3] = 0x00;
+                // MAC lenth:6 Bytes
+                p[4] = 0x06;
+                // IP lenth:4 Bytes
+                p[5] = 0x04;
+                // OP code:0x0002;
+                p[6] = 0x00;
+                p[7] = 0x02;
+                // Src MAC and Dst MAC
+                for(i=0;i<6;i++)
+                {
+                    p[8 + i] = net_if_mac[i];
+                    p[18 + i] = src_mac[i];
+                }
+                // Src IP and Dst IP
+                for(i=0;i<4;i++)
+                {
+                    p[14 + i] = net_if_ip[i];
+                    p[24 + i] = src_ip[i];
+                }
+                ethernet_out(&txbuf,src_mac,NET_PROTOCOL_ARP);
+                return;
+            }
+        }
+        
+    // }
 }
 
 /**
@@ -113,7 +267,26 @@ void arp_in(buf_t *buf)
 void arp_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol)
 {
     // TODO
-
+    uint8_t *dst_mac;
+    uint8_t i;
+    char *arp_head;
+    arp_head = buf -> data;
+    dst_mac = arp_lookup(ip);
+    if(dst_mac == NULL)
+    {
+        // printf("\ncannot find the dst mac\n");
+        arp_buf.buf = *buf;
+        for(i=0;i<4;i++)
+            arp_buf.ip[i] = ip[i];
+        arp_buf.protocol = protocol;
+        arp_buf.valid = ARP_VALID;
+        arp_req(ip);
+    }
+    else
+    {
+        // printf("find the dst mac\n");
+        ethernet_out(buf,dst_mac,protocol);
+    }
 }
 
 /**
