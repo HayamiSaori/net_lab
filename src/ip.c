@@ -24,11 +24,49 @@
 void ip_in(buf_t *buf)
 {
     // TODO 
-
+    char *ip_head = buf -> data;
+    char *dst_ip = ip_head + 16;
+    char *src_ip = ip_head + 12;
+    char version,protocol,i;
+    uint16_t head_len,total_len,old_checksum;
+    uint16_t *p;
+    p = buf -> data;
+    version = (ip_head[0] >> 4) & 0xf;
+    head_len = ip_head[0] & 0xf;
+    total_len = (ip_head[2] << 8) + ip_head[3];
+    old_checksum = (ip_head[10] << 8) + ip_head[11];
+    // inspection
+    if(
+        version == IP_VERSION_4
+        && head_len <= 60
+        && total_len <= 65535
+        && checksum16(p,head_len) == old_checksum
+        && dst_ip[0] == 192
+        && dst_ip[1] == 168
+        && dst_ip[2] == 163
+        && dst_ip[3] == 103
+    ){
+        protocol = ip_head[9];
+        switch (protocol)
+        {
+        case 1:     //icmp
+            buf_remove_header(buf,head_len);
+            icmp_in(buf,src_ip);
+            break;
+        case 17:    //udp
+            buf_remove_header(buf,head_len);
+            udp_in(buf,src_ip);
+            break;
+        default:
+            buf_remove_header(buf,head_len);
+            icmp_unreachable(buf,src_ip,ICMP_CODE_PROTOCOL_UNREACH);
+            break;
+        }
+    }
 }
 
 /**
- * @brief 处理一个要发送的ip分片
+ * @brief 处理一个要发送的分片
  *        你需要调用buf_add_header增加IP数据报头部缓存空间。
  *        填写IP数据报头部字段。
  *        将checksum字段填0，再调用checksum16()函数计算校验和，并将计算后的结果填写到checksum字段中。
@@ -48,16 +86,16 @@ void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id, u
 }
 
 /**
- * @brief 处理一个要发送的ip数据包
- *        你首先需要检查需要发送的IP数据报是否大于以太网帧的最大包长（1500字节 - 以太网报头长度）。
+ * @brief 处理一个要发送的数据包
+ *        你首先需要检查需要发送的IP数据报是否大于以太网帧的最大包长（1500字节 - ip包头长度）。
  *        
  *        如果超过，则需要分片发送。 
  *        分片步骤：
- *        （1）调用buf_init()函数初始化buf，长度为以太网帧的最大包长（1500字节 - 以太网报头长度）
+ *        （1）调用buf_init()函数初始化buf，长度为以太网帧的最大包长（1500字节 - ip包头头长度）
  *        （2）将数据报截断，每个截断后的包长度 = 以太网帧的最大包长，调用ip_fragment_out()函数发送出去
  *        （3）如果截断后最后的一个分片小于或等于以太网帧的最大包长，
  *             调用buf_init()函数初始化buf，长度为该分片大小，再调用ip_fragment_out()函数发送出去
- *             注意：id为IP数据报的分片标识，从0开始编号，每增加一个分片，自加1。最后一个分片的MF = 0
+ *             注意：最后一个分片的MF = 0
  *    
  *        如果没有超过以太网帧的最大包长，则直接调用调用ip_fragment_out()函数发送出去。
  * 

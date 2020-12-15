@@ -194,12 +194,12 @@ void arp_in(buf_t *buf)
     ip_len = arp_head[5];
     op_type = (arp_head[6] << 8) + arp_head[7];
     // inspection
-    // if(
-    //     hardware_type == 0x0001 &&
-    //     protocol == NET_PROTOCOL_IP && 
-    //     mac_len == 0x06 && 
-    //     ip_len == 0x04
-    // ){
+    if(
+        hardware_type == 0x0001 &&
+        protocol == NET_PROTOCOL_IP && 
+        mac_len == 0x06 && 
+        ip_len == 0x04
+    ){
         arp_update(src_ip,src_mac,ARP_VALID);
         if(arp_buf.valid == ARP_VALID)
         {
@@ -250,7 +250,7 @@ void arp_in(buf_t *buf)
             }
         }
         
-    // }
+    }
 }
 
 /**
