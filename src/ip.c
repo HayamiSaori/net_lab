@@ -3,7 +3,7 @@
 #include "icmp.h"
 #include "udp.h"
 #include <string.h>
-#include <config.h>
+// #include <config.h>
 /**
  * @brief 处理一个收到的数据包
  *        你首先需要做报头检查，检查项包括：版本号、总长度、首部长度等。
@@ -24,42 +24,36 @@
 void ip_in(buf_t *buf)
 {
     // TODO 
-    char *ip_head = buf -> data;
-    char *dst_ip = ip_head + 16;
-    char *src_ip = ip_head + 12;
-    char version,protocol,i;
-    uint16_t head_len,total_len,old_checksum;
-    uint16_t *p;
-    p = buf -> data;
-    version = (ip_head[0] >> 4) & 0xf;
-    head_len = ip_head[0] & 0xf;
-    total_len = (ip_head[2] << 8) + ip_head[3];
-    old_checksum = (ip_head[10] << 8) + ip_head[11];
+    ip_hdr_t *ip_head = (ip_hdr_t *) buf -> data;
+    uint16_t checksum_old = swap16(ip_head -> hdr_checksum);
+    uint16_t total_len = swap16(ip_head -> total_len);
+    uint16_t *p = buf -> data;
+    uint8_t head_len = (ip_head -> hdr_len) * 4;
+    uint8_t version = ip_head -> version;
+
     // inspection
+    ip_head -> hdr_checksum = 0;
     if(
         version == IP_VERSION_4
         && head_len <= 60
+        && head_len >= 20
         && total_len <= 65535
-        && checksum16(p,head_len) == old_checksum
-        && dst_ip[0] == 192
-        && dst_ip[1] == 168
-        && dst_ip[2] == 163
-        && dst_ip[3] == 103
+        && checksum_old == checksum16(p,head_len)
+        && memcmp(ip_head->dest_ip,net_if_ip,4) == 0
     ){
-        protocol = ip_head[9];
-        switch (protocol)
+        switch (ip_head -> protocol)
         {
-        case 1:     //icmp
+        case NET_PROTOCOL_UDP:
             buf_remove_header(buf,head_len);
-            icmp_in(buf,src_ip);
+            udp_in(buf,ip_head -> src_ip);
             break;
-        case 17:    //udp
+        case NET_PROTOCOL_ICMP:
             buf_remove_header(buf,head_len);
-            udp_in(buf,src_ip);
+            icmp_in(buf,ip_head->src_ip);
             break;
         default:
-            buf_remove_header(buf,head_len);
-            icmp_unreachable(buf,src_ip,ICMP_CODE_PROTOCOL_UNREACH);
+            ip_head -> hdr_checksum = swap16(checksum_old);
+            icmp_unreachable(buf,ip_head->src_ip,ICMP_CODE_PROTOCOL_UNREACH);
             break;
         }
     }
@@ -83,13 +77,12 @@ void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id, u
 {
     // TODO
     int i;
-    int src_ip[4] = DRIVER_IF_IP;
     uint16_t *p;
     buf_add_header(buf,20);
     p = buf -> data;
     ip_hdr_t *ip_head = (ip_hdr_t *) buf -> data;
     ip_head -> version = IP_VERSION_4;
-    ip_head -> hdr_len = 20;
+    ip_head -> hdr_len = 20 / 4;
     ip_head -> tos = 0;
     if(mf == 1)
     {
@@ -99,16 +92,19 @@ void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id, u
     {
         ip_head -> total_len = swap16(buf->len);
     }
-    ip_head -> id = id;
+    ip_head -> id = swap16(id);
     ip_head -> flags_fragment = swap16((mf << 13) + (offset / 8));
     ip_head -> ttl = 64;
     ip_head -> protocol = protocol;
-    for(i=0;i<4;i++)
+    /*for(i=0;i<4;i++)
     {
         (ip_head -> src_ip)[i] = src_ip[i];
         (ip_head -> dest_ip)[i] = ip[i];
-    }
-    ip_head -> hdr_checksum = checksum16(p,20);
+    }*/
+    memcpy(ip_head->src_ip,net_if_ip,4);
+    memcpy(ip_head->dest_ip,ip,4);
+    ip_head -> hdr_checksum = 0;
+    ip_head -> hdr_checksum = swap16(checksum16(p,20));
     arp_out(buf,ip,NET_PROTOCOL_IP);
 }
 
