@@ -96,13 +96,11 @@ void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id, u
     ip_head -> flags_fragment = swap16((mf << 13) + (offset / 8));
     ip_head -> ttl = 64;
     ip_head -> protocol = protocol;
-    /*for(i=0;i<4;i++)
+    for(i=0;i<4;i++)
     {
-        (ip_head -> src_ip)[i] = src_ip[i];
+        (ip_head -> src_ip)[i] = net_if_ip[i];
         (ip_head -> dest_ip)[i] = ip[i];
-    }*/
-    memcpy(ip_head->src_ip,net_if_ip,4);
-    memcpy(ip_head->dest_ip,ip,4);
+    }
     ip_head -> hdr_checksum = 0;
     ip_head -> hdr_checksum = swap16(checksum16(p,20));
     arp_out(buf,ip,NET_PROTOCOL_IP);
@@ -126,23 +124,23 @@ void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id, u
  * @param ip 目标ip地址
  * @param protocol 上层协议
  */
-int global_id = 0;
+int IP_ID = 0;
 void ip_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol)
 {
     // TODO 
-    uint16_t offset,id;
+    uint16_t offset,cur_id;
     offset = 0;
-    id = global_id;
+    cur_id = IP_ID;
     while ((buf -> len) - 20 > ETHERNET_MTU)
     {
         buf_init(&txbuf,ETHERNET_MTU - 20);
-        txbuf.data = buf -> data;
-        ip_fragment_out(&txbuf,ip,protocol,id,offset,1);
+        memcpy(txbuf.data,buf->data,buf->len);
+        ip_fragment_out(&txbuf,ip,protocol,cur_id,offset,1);
         buf_remove_header(buf,ETHERNET_MTU - 20);
         offset = offset + ETHERNET_MTU - 20;
     }
     buf_init(&txbuf,buf->len);
     txbuf.data = buf -> data;
-    ip_fragment_out(&txbuf,ip,protocol,id,offset,0);
-    global_id++;
+    ip_fragment_out(&txbuf,ip,protocol,cur_id,offset,0);
+    IP_ID++;
 }

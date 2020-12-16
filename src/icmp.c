@@ -17,9 +17,33 @@
  * @param buf 要处理的数据包
  * @param src_ip 源ip地址
  */
+int ICMP_ID = 0;
 void icmp_in(buf_t *buf, uint8_t *src_ip)
 {
     // TODO
+    icmp_hdr_t *icmp_head = (icmp_hdr_t *) buf -> data;
+    icmp_hdr_t *ans_head;
+    uint16_t cur_id = ICMP_ID;
+    uint16_t *p = txbuf.data;
+    if(
+        icmp_head->type == ICMP_TYPE_ECHO_REQUEST 
+        && icmp_head->code == 0
+        && buf->len >= 20
+    )
+    {
+        buf_init(&txbuf,buf->len);
+        memcpy(txbuf.data+8,buf->data+8,buf->len);
+        ans_head = (icmp_hdr_t *) txbuf.data;
+        ans_head -> type = ICMP_TYPE_ECHO_REPLY;
+        ans_head -> code = 0;
+        ans_head -> id = swap16(cur_id);
+        ans_head -> seq = swap16(cur_id);
+        ans_head -> checksum = 0;
+        ans_head -> checksum = swap16(checksum16(p,txbuf.len));
+        ip_out(&txbuf,src_ip,NET_PROTOCOL_ICMP);
+        ICMP_ID++;
+    }
+    
 }
 
 /**
@@ -36,5 +60,16 @@ void icmp_in(buf_t *buf, uint8_t *src_ip)
 void icmp_unreachable(buf_t *recv_buf, uint8_t *src_ip, icmp_code_t code)
 {
     // TODO
+    buf_init(&txbuf,8+20+8);
+    memcpy(txbuf.data+8,recv_buf->data,20+8);
+    uint16_t *p = txbuf.data;
+    icmp_hdr_t *icmp_head = (icmp_hdr_t *) txbuf.data;
     
+    icmp_head -> type = ICMP_TYPE_UNREACH;
+    icmp_head -> code = code;
+    icmp_head -> id = 0;
+    icmp_head -> seq = 0;
+    icmp_head -> checksum = 0;
+    icmp_head -> checksum = swap16(checksum16(p,8+20+8));
+    ip_out(&txbuf,src_ip,NET_PROTOCOL_ICMP);
 }
