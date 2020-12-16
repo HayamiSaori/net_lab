@@ -3,7 +3,7 @@
 #include "icmp.h"
 #include "udp.h"
 #include <string.h>
-
+#include <config.h>
 /**
  * @brief 处理一个收到的数据包
  *        你首先需要做报头检查，检查项包括：版本号、总长度、首部长度等。
@@ -82,7 +82,34 @@ void ip_in(buf_t *buf)
 void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id, uint16_t offset, int mf)
 {
     // TODO
-    
+    int i;
+    int src_ip[4] = DRIVER_IF_IP;
+    uint16_t *p;
+    buf_add_header(buf,20);
+    p = buf -> data;
+    ip_hdr_t *ip_head = (ip_hdr_t *) buf -> data;
+    ip_head -> version = IP_VERSION_4;
+    ip_head -> hdr_len = 20;
+    ip_head -> tos = 0;
+    if(mf == 1)
+    {
+        ip_head -> total_len = swap16(ETHERNET_MTU);
+    }
+    else
+    {
+        ip_head -> total_len = swap16(buf->len);
+    }
+    ip_head -> id = id;
+    ip_head -> flags_fragment = swap16((mf << 13) + (offset / 8));
+    ip_head -> ttl = 64;
+    ip_head -> protocol = protocol;
+    for(i=0;i<4;i++)
+    {
+        (ip_head -> src_ip)[i] = src_ip[i];
+        (ip_head -> dest_ip)[i] = ip[i];
+    }
+    ip_head -> hdr_checksum = checksum16(p,20);
+    arp_out(buf,ip,NET_PROTOCOL_IP);
 }
 
 /**
@@ -103,8 +130,23 @@ void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id, u
  * @param ip 目标ip地址
  * @param protocol 上层协议
  */
+int global_id = 0;
 void ip_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol)
 {
     // TODO 
-    
+    uint16_t offset,id;
+    offset = 0;
+    id = global_id;
+    while ((buf -> len) - 20 > ETHERNET_MTU)
+    {
+        buf_init(&txbuf,ETHERNET_MTU - 20);
+        txbuf.data = buf -> data;
+        ip_fragment_out(&txbuf,ip,protocol,id,offset,1);
+        buf_remove_header(buf,ETHERNET_MTU - 20);
+        offset = offset + ETHERNET_MTU - 20;
+    }
+    buf_init(&txbuf,buf->len);
+    txbuf.data = buf -> data;
+    ip_fragment_out(&txbuf,ip,protocol,id,offset,0);
+    global_id++;
 }

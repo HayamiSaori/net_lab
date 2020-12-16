@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <net.h>
 #define IPTOSBUFFERS 12
 
 /**
@@ -89,7 +90,7 @@ uint16_t checksum16(uint16_t *buf, int len)
     int i;
     for(i=0;i<len;i++)
     {
-        checksum += buf[i];
+        checksum += swap16(buf[i]);
     }
     checksum = (checksum >> 16) + (checksum & 0xffff);
     checksum += (checksum >> 16);
