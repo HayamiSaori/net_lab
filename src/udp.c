@@ -5,6 +5,21 @@
 #include <string.h>
 #include <stdio.h>
 
+void myhandler(udp_entry_t *entry, uint8_t *src_ip, uint16_t src_port, buf_t *buf)
+{
+    printf("recv udp packet from %s:%d len=%d\n", iptos(src_ip), src_port, buf->len);
+    for (int i = 0; i < buf->len; i++)
+        putchar(buf->data[i]);
+    putchar('\n');
+    uint16_t len = 1800;
+    //uint16_t len = 1000;
+    uint8_t data[len];
+
+    uint16_t dest_port = 60001;
+    for (int i = 0; i < len; i++)
+        data[i] = i;
+    udp_send(data, len, 60000, src_ip, dest_port); //发送udp包
+}
 /**
  * @brief udp处理程序表
  * 
@@ -29,7 +44,35 @@ static udp_entry_t udp_table[UDP_MAX_HANDLER];
 static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dest_ip)
 {
     // TODO
-    
+    udp_hdr_t *udp_head = (udp_hdr_t *)buf -> data;
+
+    buf_add_header(buf,12);
+
+    udp_peso_hdr_t *fake_head = (udp_peso_hdr_t *)buf -> data;
+    uint16_t *pbuf = (uint16_t *)buf -> data;
+
+    uint16_t result;
+    uint32_t i,cover_len,checksum=0;
+    memcpy(fake_head->src_ip,src_ip,4);
+    memcpy(fake_head->dest_ip,dest_ip,4);
+    fake_head -> placeholder = 0;
+    fake_head -> protocol = NET_PROTOCOL_UDP;
+    fake_head -> total_len = udp_head -> total_len;
+    cover_len = fake_head -> total_len;
+    udp_head -> checksum = 0;
+    for(i=0;i<(cover_len/2);i++)
+    {
+        checksum += swap16(pbuf[i]);
+    }
+    if(cover_len % 2 == 1) // pad
+    {
+        checksum += swap16(((buf -> data[cover_len - 1]) << 8));
+    }
+    checksum = (checksum >> 16) + (checksum & 0xffff);
+    checksum += (checksum >> 16);
+    result = ~checksum;
+    buf_remove_header(buf,12);
+    return result;
 }
 
 /**
@@ -53,7 +96,41 @@ static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dest_ip)
 void udp_in(buf_t *buf, uint8_t *src_ip)
 {
     // TODO
-
+    udp_hdr_t *udp_head = (udp_hdr_t *)buf -> data;
+    ip_hdr_t *ip_head;
+    uint16_t dst_port = swap16(udp_head -> dest_port);
+    uint16_t src_port = swap16(udp_head -> src_port);
+    uint16_t *p;
+    uint16_t old_checksum = swap16(udp_head -> checksum);
+    udp_head -> checksum = 0;
+    if(old_checksum == udp_checksum(buf,src_ip,net_if_ip))
+    {
+        udp_head -> checksum = swap16(old_checksum);
+        if(!udp_open(dst_port,myhandler))
+        {
+            buf_remove_header(buf,8);
+            myhandler(udp_table,src_ip,src_port,buf);
+        }
+        else
+        {
+            buf_add_header(buf,20);
+            ip_head = (udp_hdr_t *)buf -> data;
+            ip_head -> version = IP_VERSION_4;
+            ip_head -> hdr_len = 5;
+            ip_head -> tos = 0;
+            ip_head -> total_len = swap16(buf -> len);
+            ip_head -> id = 0;
+            ip_head -> flags_fragment = 0;
+            ip_head -> ttl = IP_DEFALUT_TTL;
+            ip_head -> protocol = NET_PROTOCOL_UDP;
+            memcpy(ip_head->src_ip,net_if_ip,4);
+            memcpy(ip_head->dest_ip,src_ip,4);
+            p = (uint16_t *)buf -> data;
+            ip_head -> hdr_checksum = 0;
+            ip_head -> hdr_checksum = swap16(checksum16(p,20));
+            icmp_unreachable(buf,src_ip,ICMP_CODE_PORT_UNREACH);
+        }
+    }
 }
 
 /**
@@ -71,7 +148,16 @@ void udp_in(buf_t *buf, uint8_t *src_ip)
 void udp_out(buf_t *buf, uint16_t src_port, uint8_t *dest_ip, uint16_t dest_port)
 {
     // TODO
-
+    uint16_t checksum = 0;
+    buf_add_header(buf,8);
+    udp_hdr_t *udp_head = (udp_hdr_t *)buf -> data;
+    udp_head -> checksum = 0;
+    udp_head -> src_port = swap16(src_port);
+    udp_head -> dest_port = swap16(dest_port);
+    udp_head -> total_len = swap16(buf -> len);
+    checksum = udp_checksum(buf,net_if_ip,dest_ip);
+    udp_head -> checksum = swap16(checksum);
+    ip_out(buf,dest_ip,NET_PROTOCOL_UDP);
 }
 
 /**
