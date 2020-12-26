@@ -59,14 +59,15 @@ static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dest_ip)
     fake_head -> protocol = NET_PROTOCOL_UDP;
     fake_head -> total_len = udp_head -> total_len;
     cover_len = fake_head -> total_len;
-    udp_head -> checksum = 0;
+    // udp_head -> checksum = 0;
     for(i=0;i<(cover_len/2);i++)
     {
         checksum += swap16(pbuf[i]);
     }
     if(cover_len % 2 == 1) // pad
     {
-        checksum += swap16(((buf -> data[cover_len - 1]) << 8));
+        // printf("mark\n");
+        checksum += swap16(((buf -> data[cover_len / 2]) << 8));
     }
     checksum = (checksum >> 16) + (checksum & 0xffff);
     checksum += (checksum >> 16);
@@ -102,6 +103,7 @@ void udp_in(buf_t *buf, uint8_t *src_ip)
     uint16_t src_port = swap16(udp_head -> src_port);
     uint16_t *p;
     uint16_t old_checksum = swap16(udp_head -> checksum);
+    buf -> len = swap16(udp_head -> total_len);
     udp_head -> checksum = 0;
     if(old_checksum == udp_checksum(buf,src_ip,net_if_ip))
     {
@@ -114,7 +116,7 @@ void udp_in(buf_t *buf, uint8_t *src_ip)
         else
         {
             buf_add_header(buf,20);
-            ip_head = (udp_hdr_t *)buf -> data;
+            ip_head = (ip_hdr_t *)buf -> data;
             ip_head -> version = IP_VERSION_4;
             ip_head -> hdr_len = 5;
             ip_head -> tos = 0;
