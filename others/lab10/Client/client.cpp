@@ -12,12 +12,13 @@ int main(void)
 {
     int fd,buf_len,i;
     char buf[DATA_MAX_SIZE];
-    // char filename[NAME_MAX_LEN];
-    string filename,filecontent="";
-    char localhost[] = "127.0.0.1";
+    string filecontent="";
+    
+    char filename[MAX_NAME_LEN];
     char ch;
     struct sockaddr_in server_addr;
-    ifstream sendfile;
+    ifstream upload_file;
+    ofstream download_file;
     fd = socket(AF_INET,SOCK_STREAM,0);
     if(fd == -1)
     {
@@ -28,38 +29,65 @@ int main(void)
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(LISTEN_PORT);
-    inet_pton(AF_INET,localhost,&server_addr.sin_addr);
+    inet_pton(AF_INET,ID_ADDR,&server_addr.sin_addr);
     if(connect(fd,(struct sockaddr *)(&server_addr),sizeof(server_addr)) == -1)
     {
         cout << "Connect error!" << endl;
         return CONNECT_ERR;
     }
-    cout << "Which file do you want to send? Please input the filename" << endl;
-    cin >> filename;
-    sendfile.open(filename,ios::in);
-    // sendfile >> filecontent;
-    i = 0;
-    while(sendfile.get(ch))
+    while(true)
     {
-        filecontent += ch;
-        i++;
+        memset(filename,0,MAX_NAME_LEN);
+        memset(buf,0,DATA_MAX_SIZE);
+        cout << "Please input the command.D|d for download and U|u for upload." << endl;
+        cin >> ch;
+        cout << "Please input the filename" << endl;
+        cin >> filename;
+        if(ch == 'D' || ch == 'd')
+        {
+            buf[0] = FLAG_CH;
+            strcat(buf,filename);
+            buf_len = send(fd,buf,DATA_MAX_SIZE,0);
+            memset(buf,0,DATA_MAX_SIZE);
+            buf_len = recv(fd,buf,DATA_MAX_SIZE,0);
+            if(buf[0] == FLAG_CH)
+            {
+                cout << "No such file name \"" << filename << "\" in server." << endl; 
+            }
+            else
+            {
+                download_file.open(filename,ios::out);
+                download_file << buf;
+                download_file.close();
+            }
+        }
+        else if(ch == 'U' || ch == 'u')
+        {
+            upload_file.open(filename,ios::in);
+            i = 0;
+            while(upload_file.get(ch))
+            {
+                filecontent += ch;
+                i++;
+            }
+            for(i=0;i<strlen(filename);i++)
+            {
+                buf[i] = filename[i];
+            }
+            buf[i] = FLAG_CH;
+            buf_len = strlen(filename) + filecontent.size() + 1;
+            for(i=strlen(filename)+1;i<buf_len;i++)
+            {
+                buf[i] = filecontent[i - strlen(filename) - 1];
+            }
+            upload_file.close();
+            send(fd,buf,strlen(buf),0);        
+        }
+        else
+        {
+            cout << "Error! Please try again." << endl;
+        }
     }
-    
-    // cout << filecontent << endl;
-    for(i=0;i<filename.size();i++)
-    {
-        buf[i] = filename[i];
-    }
-    buf[i] = '$';
-    
-    buf_len = filename.size() + filecontent.size() + 1;
-    for(i=filename.size()+1;i<buf_len;i++)
-    {
-        buf[i] = filecontent[i - filename.size() - 1];
-    }
-    // cout << buf << endl;
-    sendfile.close();
-    send(fd,buf,strlen(buf),0);
     close(fd);
     return 0;
 }
