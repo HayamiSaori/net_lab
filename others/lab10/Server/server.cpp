@@ -14,7 +14,6 @@ int main(void)
     int i,buf_len,listen_fd,connect_fd;
     struct sockaddr_in server_addr;
     char buf[DATA_MAX_SIZE];
-    char div[2] = "$";
     char *pbuf;
     char filename[NAME_MAX_LEN];
 
@@ -50,7 +49,7 @@ int main(void)
             continue;
         }
         buf_len = recv(connect_fd,buf,DATA_MAX_SIZE,0);
-        cout << buf << endl;
+        // cut the buf to divide filename and content
         i=0;
         while(buf[i] != '$')
         {
@@ -59,6 +58,7 @@ int main(void)
         }
         filename[i] = '\0';
         pbuf = buf + i + 1;
+        buf[strlen(buf)] = '\0';
         message.open(filename,ios::out);
         message << pbuf;
         message.close();
